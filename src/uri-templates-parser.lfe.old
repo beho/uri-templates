@@ -1,0 +1,94 @@
+(defmodule uri-templates-parser
+  (export all))
+
+(include-file "include/records.lfe")
+
+(defmacro tokenizing-re []
+  "Compiled regular expression that is used to split input URI template to tokens. Tokens are separated
+  by expression boundaries – { and }."
+  (element 2 (re:compile "([\{\}])" '(unicode ucp))))
+
+(defun parse
+  ([str] (when (is_binary str))
+    (let* ((tokens (re:split str (tokenizing-re) '(#(return binary) trim)))
+          (fragments (to-fragments tokens)))
+      (make-uri-template fragments fragments)))
+  ([str] (when (is_list str))
+    (let ((bin-str (list_to_binary str)))
+      (parse bin-str)))
+  ([_] (throw #('error "Input must be string - list or binary"))))
+
+(defmacro expression-re []
+  "Compiler regular expression for expression. ie. optional operator followed
+   by comma-separated list varspecs."
+  (element 2 (re:compile "^([\+#\./;\?&]?)([a-zA-Z0-9_%,\*:]+)$" 
+                            '(unicode ucp))))
+
+(defmacro varspec-re []
+  (element 2 (re:compile "^([a-zA-Z0-9_%]+)(?:(\\*)|(\\:)(\\d+))?$" 
+                            '(unicode ucp))))
+
+(defmacro variable-list-splitting-re []
+  (element 2 (re:compile ",")))
+
+(defun parse-varspec [str]
+  (let ((match (re:run str (varspec-re) '(#(capture all_but_first list)))))
+    (case match
+      ((tuple 'match matches)
+         (case matches
+           ((list varname)
+              (make-varspec varname varname))
+            ((list varname "*")
+              (make-varspec varname varname 
+                                    modifier #\*))
+            ((list varname '() ":" length-str)
+              (let (((tuple length '()) (string:to_integer length-str)))
+                (make-varspec varname varname 
+                                      modifier #\: 
+                                      modifier-arg length)))))
+      ('nomatch
+        (throw #('error "cannot parse varspec" str))))))
+
+(defun parse-variable-list [str]
+  (let ((varspecs (re:split str (variable-list-splitting-re))))
+    (lists:map #'parse-varspec/1 varspecs)))
+
+(defun -operator-match->symbol
+  ([""] 'undefined)
+  ([str] (car str)))
+
+(defun parse-expression [str]
+  (let ((result (re:run str (expression-re) '(#(capture all_but_first list)))))
+    (case result
+      ((tuple 'match matches)
+         (let ((operator (-operator-match->symbol (car matches)))
+               (varspecs (parse-variable-list (cdr matches))))
+            (make-expression operator operator
+                             varspecs varspecs)))
+      ('nomatch
+        (throw #('error "cannot parse expression" expression))))))
+
+
+(defun to-fragments [tokens]
+  (fletrec ((handle-next-fragment (fragments tokens)
+              (let* ((tokens (lists:dropwhile (lambda (t) (== (size t) 0)) tokens)) 
+                     (next (next-fragment tokens)))
+                (case next
+                  ((tuple ok fragment rest)
+                      (handle-next-fragment (cons fragment fragments) rest))
+                   ('done (lists:reverse fragments))))))
+    (handle-next-fragment '() tokens)))
+
+(defun next-fragment
+  ([(cons "{" (cons expr (cons "}" rest)))]
+    `#(ok ,(parse-expression expr) ,rest))
+  ([(cons "{" _)]
+    (throw #('error "no matching {}")))
+  ([(cons literal rest)] (when (> (length literal) 0))
+    `#(ok ,(make-literal value literal) ,rest))
+  ([()] 
+    'done))
+
+; (set template (create "https://test.cz{/a}{?b,c}"))
+; (expand template #(a "resource" b "val1" c "val2"))
+; (match template "http://test.cz/res?b=val1&c=val2")

@@ -1,0 +1,15 @@
+{application, uri_templates,
+ [{description, "URI Templates library implmenting RFC6570."},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, []},
+  {links, []}
+ ]}.

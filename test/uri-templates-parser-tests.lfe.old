@@ -1,0 +1,165 @@
+(defmodule uri-templates-parser-tests
+  (behaviour ltest-unit)
+  (export all)
+  (import (from uri-templates-parser (parse-varspec 1)
+                                     (parse-variable-list 1)
+                                     (parse-expression 1)
+                                     (parse 1))))
+
+(include-lib "ltest/include/ltest-macros.lfe")
+(include-file "include/records.lfe")
+
+(deftest parse-varspec-positive
+  (is-match
+    (match-varspec varname "var")
+    (parse-varspec "var"))
+  (is-match 
+    (match-varspec varname "var" modifier #\*)
+    (parse-varspec "var*"))
+  (is-match
+    (match-varspec varname "var" modifier #\: modifier-arg 10)
+    (parse-varspec "var:10"))
+  (is-throw
+    (parse-varspec "")))
+
+(deftest parse-varspec-negative
+  (is-throw
+    (parse-varspec ""))
+  (is-throw
+    (parse-varspec "*"))
+  (is-throw
+    (parse-varspec "var:"))
+  (is-throw
+    (parse-varspec "var:foo")))
+
+(deftest parse-variable-list-positive
+  (is-match 
+    (list (match-varspec varname "var"))
+    (parse-variable-list "var"))
+  (is-match
+    (list (match-varspec varname "var1")
+          (match-varspec varname "var2"))
+    (parse-variable-list "var1,var2"))
+  (is-match
+    (list (match-varspec varname "var1" modifier #\*)
+          (match-varspec varname "var2"))
+    (parse-variable-list "var1*,var2"))
+  (is-match
+    (list (match-varspec varname "var1")
+          (match-varspec varname "var2" modifier #\*))
+    (parse-variable-list "var1,var2*"))
+  (is-match
+    (list (match-varspec varname "var1" modifier #\: modifier-arg 10)
+          (match-varspec varname "var2"))
+    (parse-variable-list "var1:10,var2"))
+  (is-match
+    (list (match-varspec varname "var1")
+          (match-varspec varname "var2" modifier #\: modifier-arg 10))
+    (parse-variable-list "var1,var2:10")))
+
+(deftest parse-variable-list-negative
+  (is-throw
+    (parse-variable-list ""))
+  (is-throw
+    (parse-variable-list "var1, var2")))
+
+(deftest parse-expression-positive
+  (is-match
+    (match-expression operator 'undefined 
+                      varspecs (list (match-varspec varname "var")))
+    (parse-expression "var"))
+  (is-match
+    (match-expression operator 'undefined 
+                      varspecs (list (match-varspec varname "var1")
+                                     (match-varspec varname "var2")))
+    (parse-expression "var1,var2"))
+  (is-match
+    (match-expression operator #\+ 
+                      varspecs (list (match-varspec varname "var1")
+                                     (match-varspec varname "var2")))
+    (parse-expression "+var1,var2"))
+  (is-match
+    (match-expression operator #\# 
+                      varspecs (list (match-varspec varname "var1")
+                                     (match-varspec varname "var2")))
+    (parse-expression "#var1,var2"))
+  (is-match
+    (match-expression operator #\. 
+                      varspecs (list (match-varspec varname "var1")
+                                     (match-varspec varname "var2")))
+    (parse-expression ".var1,var2"))
+  (is-match
+    (match-expression operator #\/ 
+                      varspecs (list (match-varspec varname "var1")
+                                     (match-varspec varname "var2")))
+    (parse-expression "/var1,var2"))
+  (is-match
+    (match-expression operator #\; 
+                      varspecs (list (match-varspec varname "var1")
+                                     (match-varspec varname "var2")))
+    (parse-expression ";var1,var2"))
+  (is-match
+    (match-expression operator #\? 
+                      varspecs (list (match-varspec varname "var1")
+                                     (match-varspec varname "var2")))
+    (parse-expression "?var1,var2"))
+  (is-match
+    (match-expression operator #\& 
+                      varspecs (list (match-varspec varname "var1")
+                                     (match-varspec varname "var2")))
+    (parse-expression "&var1,var2"))
+  (is-match
+    (match-expression operator #\& 
+                      varspecs (list (match-varspec varname "var1" 
+                                                   modifier #\*)
+                                     (match-varspec varname "var2")))
+    (parse-expression "&var1*,var2"))
+  (is-match
+    (match-expression operator #\& 
+                      varspecs (list (match-varspec varname "var1" 
+                                                    modifier #\: 
+                                                    modifier-arg 10)
+                                     (match-varspec varname "var2")))
+    (parse-expression "&var1:10,var2")))
+
+(deftest parse-expression-negative
+  (is-throw
+    (parse-expression ""))
+  (is-throw
+    (parse-expression "*"))
+  (is-throw
+    (parse-expression ":10")))
+
+(deftest parse-positive
+  (is-match
+    (match-uri-template 
+      fragments
+      (list (match-literal value "http://www.test.cz")))
+    (parse "http://www.test.cz"))
+  (is-match
+    (match-uri-template 
+      fragments
+      (list (match-literal value "http://www.test.cz/")
+            (match-expression operator 'undefined
+                              varspecs (list (match-varspec varname "var")))))
+    (parse "http://www.test.cz/{var}"))
+  (is-match
+    (match-uri-template 
+      fragments
+      (list (match-literal value "http://www.test.cz")
+            (match-expression operator #\/
+                              varspecs (list (match-varspec varname "var1")
+                                             (match-varspec varname "var2")))
+            (match-literal value "/scope")
+            (match-expression operator #\.
+                              varspecs (list (match-varspec varname "var3")))
+            (match-expression operator #\#
+                              varspecs (list (match-varspec varname "var4")))))
+    (parse "http://www.test.cz{/var1,var2}/scope{.var3}{#var4}")))
+
+(deftest parse-negative
+  (is-throw
+    (parse "http://www.test.cz{/var2"))
+  (is-throw
+    (parse "http://www.test.cz{")))
+
